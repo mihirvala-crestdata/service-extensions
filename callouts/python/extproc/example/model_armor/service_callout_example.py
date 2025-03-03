@@ -205,14 +205,9 @@ class CalloutServerExample(callout_server.CalloutServer):
         is_invalid_model_response, valid_model_response = screen_prompt(model_response)
         if is_invalid_model_response:
             # Stop response for invalid model response
-            return callout_tools.header_immediate_response(
-                code=http_status_pb2.StatusCode.InternalServerError,
-                headers=[
-                    (
-                        "model-armour-message",
-                        "Model response violates responsible AI filters. Update the prompt or contact application admin if issue persists.",
-                    )
-                ],
+            return callout_tools.deny_callout(
+                context,
+                msg="Model response violates responsible AI filters. Update the prompt or contact application admin if issue persists.",
             )
 
         response_body_json["choices"][0]["message"]["content"] = valid_model_response
