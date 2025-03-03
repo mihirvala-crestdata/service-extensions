@@ -194,7 +194,6 @@ class CalloutServerExample(callout_server.CalloutServer):
         body_content = f"{body.body.decode('utf-8')}".strip()
         if not body_content:
             return callout_tools.add_body_mutation()
-        print(f"Raw JSON Input: {body_content!r}")
 
         response_body_json = json.loads(body_content)
         model_response = response_body_json["choices"][0]["message"]["content"]
