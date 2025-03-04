@@ -33,12 +33,12 @@ class InputType(str, enum.Enum):
     MODEL_RESPONSE = "model_response"
 
 
-def screen_text(text: str, type: InputType) -> Tuple[bool, str]:
+def screen_text(text: str, text_type: InputType) -> Tuple[bool, str]:
     """Screen provided text with model armor.
 
     Args:
         text (str): string data to screen.
-        type (InputType): type of text to screen (prompt or model response).
+        text_type (InputType): type of text to screen (prompt or model response).
     Returns:
         is_valid (bool): boolean value to indicate if text is valid.
         sanitized_text (str): The sanitized text if de-identified value received from model armor or original text.
@@ -71,7 +71,7 @@ def screen_text(text: str, type: InputType) -> Tuple[bool, str]:
         return is_invalid, sanitized_text
 
     # Get the findings for prompt if text type is user prompt
-    if type == InputType.PROMPT:
+    if text_type == InputType.PROMPT:
         screen_response = client.sanitize_user_prompt(
             request=modelarmor_v1.SanitizeUserPromptRequest(
                 name=model_armor_template,
@@ -79,7 +79,7 @@ def screen_text(text: str, type: InputType) -> Tuple[bool, str]:
             )
         )
     # Get the findings for model response if type is model response
-    elif type == InputType.MODEL_RESPONSE:
+    elif text_type == InputType.MODEL_RESPONSE:
         screen_response = client.sanitize_model_response(
             request=modelarmor_v1.SanitizeUserPromptRequest(
                 name=model_armor_template,
