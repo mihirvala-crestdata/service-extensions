@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 from typing import Generator
 from unittest.mock import MagicMock, patch
 
@@ -36,7 +37,9 @@ _local_test_args = {"kwargs": default_kwargs, "test_class": CalloutServerTest}
 
 
 @pytest.fixture
-def mock_model_armor_client() -> Generator[modelarmor_v1.ModelArmorClient, None, None]:
+def mock_model_armor_match_found_client() -> (
+    Generator[modelarmor_v1.ModelArmorClient, None, None]
+):
     with patch("google.cloud.modelarmor_v1.ModelArmorClient") as mock_client:
         client_instance = mock_client.return_value
         mock_prompt_response = MagicMock()
@@ -52,9 +55,29 @@ def mock_model_armor_client() -> Generator[modelarmor_v1.ModelArmorClient, None,
         yield client_instance
 
 
+@pytest.fixture
+def mock_model_armor_match_not_found_client() -> (
+    Generator[modelarmor_v1.ModelArmorClient, None, None]
+):
+    with patch("google.cloud.modelarmor_v1.ModelArmorClient") as mock_client:
+        client_instance = mock_client.return_value
+        mock_prompt_response = MagicMock()
+        mock_prompt_response.sanitization_result.filter_match_state = (
+            modelarmor_v1.FilterMatchState.NO_MATCH_FOUND
+        )
+        client_instance.sanitize_user_prompt.return_value = mock_prompt_response
+        mock_model_response = MagicMock()
+        mock_model_response.sanitization_result.filter_match_state = (
+            modelarmor_v1.FilterMatchState.NO_MATCH_FOUND
+        )
+        client_instance.sanitize_model_response.return_value = mock_model_response
+        yield client_instance
+
+
 @pytest.mark.parametrize("server", [_local_test_args], indirect=True)
 def test_invalid_prompt_request(
-    server: CalloutServerTest, mock_model_armor_client: modelarmor_v1.ModelArmorClient
+    server: CalloutServerTest,
+    mock_model_armor_match_found_client: modelarmor_v1.ModelArmorClient,
 ) -> None:
 
     with get_plaintext_channel(server) as channel:
@@ -74,8 +97,27 @@ def test_invalid_prompt_request(
 
 
 @pytest.mark.parametrize("server", [_local_test_args], indirect=True)
+def test_valid_user_prompt(
+    server: CalloutServerTest,
+    mock_model_armor_match_not_found_client: modelarmor_v1.ModelArmorClient,
+) -> None:
+
+    with get_plaintext_channel(server) as channel:
+        stub = service_pb2_grpc.ExternalProcessorStub(channel)
+        valid_body = '{"prompt": "valid mock prompt"}'
+        mock_body = service_pb2.HttpBody(body=valid_body.encode("utf-8"))
+        response = make_request(stub, request_body=mock_body)
+
+        assert (
+            response.request_body.response.body_mutation.body.decode("utf-8")
+            == valid_body
+        )
+
+
+@pytest.mark.parametrize("server", [_local_test_args], indirect=True)
 def test_invalid_model_response(
-    server: CalloutServerTest, mock_model_armor_client: modelarmor_v1.ModelArmorClient
+    server: CalloutServerTest,
+    mock_model_armor_match_found_client: modelarmor_v1.ModelArmorClient,
 ) -> None:
 
     with get_plaintext_channel(server) as channel:
@@ -105,3 +147,36 @@ def test_invalid_model_response(
             e.value.details()
             == "Model response violates responsible AI filters. Update the prompt or contact application admin if issue persists."
         )
+
+
+@pytest.mark.parametrize("server", [_local_test_args], indirect=True)
+def test_valid_model_response(
+    server: CalloutServerTest,
+    mock_model_armor_match_not_found_client: modelarmor_v1.ModelArmorClient,
+) -> None:
+
+    with get_plaintext_channel(server) as channel:
+        stub = service_pb2_grpc.ExternalProcessorStub(channel)
+
+        valid_response_body = service_pb2.HttpBody(
+            body=b"""
+            {
+              "choices": [
+                {
+                  "finish_reason": "stop",
+                  "index": 0,
+                  "message": {
+                    "content": "Valid model response",
+                    "role": "assistant",
+                    "name": "mock-model"
+                  }
+                }
+              ]
+            }
+            """
+        )
+        response = make_request(stub, response_body=valid_response_body)
+
+        assert json.loads(
+            response.response_body.response.body_mutation.body.decode("utf-8")
+        ) == json.loads(valid_response_body.body.decode("utf-8"))

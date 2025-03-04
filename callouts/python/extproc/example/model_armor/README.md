@@ -13,7 +13,7 @@ To create the Docker image, run the following command from the callout Python ro
 ```bash
 docker build \
   -f ./extproc/example/Dockerfile \
-  -t model-armour-callout-python \
+  -t model-armor-callout-python \
   --build-arg copy_path=extproc/example/model_armor/ \
   --build-arg run_module=service_callout_example .
 ```
@@ -127,9 +127,7 @@ Configure firewall rules for backends (Google Cloud [documentation](https://clou
     
     - Callout instance needs to have following environment variable configured:
         - `MA_LOCATION`: Google cloud location Id of Model Armor templates.
-        - `MA_PROMPT_TEMPLATE`: Model Armor template resource path for screening user prompt
-            (eg. `projects/<project-id>/locations/<location-id>/templates/<template-id>`)
-        - `MA_RESPONSE_TEMPLATE`: Model Armor template resource path for screening model response
+        - `MA_TEMPLATE`: Model Armor template resource path for screening user prompt and model response
             (eg. `projects/<project-id>/locations/<location-id>/templates/<template-id>`).
 
     **Note** 

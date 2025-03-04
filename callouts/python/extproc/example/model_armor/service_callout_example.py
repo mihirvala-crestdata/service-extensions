@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import enum
 import json
 import logging
 import os
@@ -25,16 +26,26 @@ from google.cloud import modelarmor_v1
 from grpc import ServicerContext
 
 
-def screen_prompt(prompt: str) -> Tuple[bool, str]:
-    """Screen prompt with model armour.
+class InputType(str, enum.Enum):
+    """Enum class for type of text to screen"""
+
+    PROMPT = "prompt"
+    MODEL_RESPONSE = "model_response"
+
+
+def screen_text(text: str, type: InputType) -> Tuple[bool, str]:
+    """Screen provided text with model armor.
 
     Args:
-        prompt (str): The prompt to check.
+        text (str): string data to screen.
+        type (InputType): type of text to screen (prompt or model response).
+    Returns:
+        is_valid (bool): boolean value to indicate if text is valid.
+        sanitized_text (str): The sanitized text if de-identified value received from model armor or original text.
     """
-
     # Initialize prompt validation status and final prompt
     is_invalid = False
-    final_prompt = prompt
+    sanitized_text = text
 
     # Location for model armor client and template
     location = os.environ.get("MA_LOCATION")
@@ -47,98 +58,62 @@ def screen_prompt(prompt: str) -> Tuple[bool, str]:
         ),
     )
 
-    # Model Armor prompt template
-    model_armour_template = os.environ.get("MA_PROMPT_TEMPLATE")
+    # Model Armor template
+    model_armor_template = os.environ.get("MA_TEMPLATE")
 
-    # Get the findings for prompt
-    sanitize_response = client.sanitize_user_prompt(
-        request=modelarmor_v1.SanitizeUserPromptRequest(
-            name=model_armour_template,
-            user_prompt_data=modelarmor_v1.DataItem(text=prompt),
+    # If model armor template is not found, return invalid
+    if not model_armor_template:
+        logging.warning("`MA_TEMPLATE` environment variable not found.")
+        return is_invalid, sanitized_text
+
+    # Get the findings for prompt if text type is user prompt
+    if type == InputType.PROMPT:
+        screen_response = client.sanitize_user_prompt(
+            request=modelarmor_v1.SanitizeUserPromptRequest(
+                name=model_armor_template,
+                user_prompt_data=modelarmor_v1.DataItem(text=text),
+            )
         )
-    )
+    # Get the findings for model response if type is model response
+    elif type == InputType.MODEL_RESPONSE:
+        screen_response = client.sanitize_model_response(
+            request=modelarmor_v1.SanitizeUserPromptRequest(
+                name=model_armor_template,
+                user_prompt_data=modelarmor_v1.DataItem(text=text),
+            )
+        )
+    else:
+        # Return invalid if text type is not prompt or model response
+        logging.warning(
+            "Invalid text type received. It should be either prompt or model response"
+        )
+        return is_invalid, sanitized_text
 
     # Check if Match Found for any filter
     if (
-        sanitize_response.sanitization_result.filter_match_state
+        screen_response.sanitization_result.filter_match_state
         == modelarmor_v1.FilterMatchState.MATCH_FOUND
     ):
-        # If De-identify SDP filter is matched, get the sanitized text from model armor
+        # If Advanced SDP filter is enabled in the template,
+        # check if the response contains de-identified content.
         if (
-            sanitize_response.sanitization_result.filter_results.get(
+            screen_response.sanitization_result.filter_results.get(
                 "sdp"
             ).sdp_filter_result.deidentify_result.match_state
             == modelarmor_v1.FilterMatchState.MATCH_FOUND
         ):
-            final_prompt = (
-                sanitize_response.sanitization_result.filter_results.get(
+            sanitized_text = (
+                screen_response.sanitization_result.filter_results.get(
                     "sdp"
                 ).sdp_filter_result.deidentify_result.data.text
-                or prompt
+                or text
             )
         # Mark prompt invalid for other filter match
         else:
             is_invalid = True
 
-    # Return final finding and original/sanitized prompt
-    return is_invalid, final_prompt
-
-
-def screen_model_response(model_response: str) -> Tuple[bool, str]:
-    """Screen model response with model armour.
-
-    Args:
-        response (str): The response to check.
-    """
-    # Initialize model response validation status and final response text
-    is_invalid = False
-    final_model_response = model_response
-
-    # Location for model armor client and template
-    location = os.environ.get("MA_LOCATION")
-
-    # Create the model armor client
-    client = modelarmor_v1.ModelArmorClient(
-        transport="rest",
-        client_options=ClientOptions(
-            api_endpoint=f"modelarmor.{location}.rep.googleapis.com"
-        ),
-    )
-
-    # Model Armor prompt template
-    model_armour_template = os.environ.get("MA_RESPONSE_TEMPLATE")
-
-    # Get the findings for model response
-    sanitize_model_response = client.sanitize_model_response(
-        request=modelarmor_v1.SanitizeUserPromptRequest(
-            name=model_armour_template,
-            user_prompt_data=modelarmor_v1.DataItem(text=final_model_response),
-        )
-    )
-
-    # Check if Match Found for any filter
-    if (
-        sanitize_model_response.sanitization_result.filter_match_state
-        == modelarmor_v1.FilterMatchState.MATCH_FOUND
-    ):
-        # If De-identify SDP filter is matched, get the sanitized text from model armor
-        if (
-            sanitize_model_response.sanitization_result.filter_results.get(
-                "sdp"
-            ).sdp_filter_result.deidentify_result.match_state
-            == modelarmor_v1.FilterMatchState.MATCH_FOUND
-        ):
-            final_model_response = (
-                sanitize_model_response.sanitization_result.filter_results.get(
-                    "sdp"
-                ).sdp_filter_result.deidentify_result.data.text
-            )
-        # Mark prompt invalid for other filter match
-        else:
-            is_invalid = True
-
-    # Return final finding and original/sanitized prompt
-    return is_invalid, final_model_response
+    # Return final finding result and original/sanitized text
+    return is_invalid, sanitized_text
 
 
 class CalloutServerExample(callout_server.CalloutServer):
@@ -160,23 +135,30 @@ class CalloutServerExample(callout_server.CalloutServer):
             return callout_tools.add_body_mutation()
 
         body_json = json.loads(body_content)
+
+        # TODO (Developer) : Update parsing prompt from request body
+        # according to expected request body format
         prompt = body_json.get("prompt", "")
 
         if not prompt:
             return callout_tools.add_body_mutation()
-        is_invalid_prompt, valid_prompt = screen_prompt(prompt)
+        is_invalid_prompt, valid_prompt = screen_text(prompt, InputType.PROMPT)
         if is_invalid_prompt:
             # Stop request for invalid prompts
             return callout_tools.header_immediate_response(
                 code=http_status_pb2.StatusCode.Forbidden,
                 headers=[
                     (
-                        "model-armour-message",
+                        "model-armor-message",
                         "Provided prompt does not comply with Responsible AI filter",
                     )
                 ],
             )
 
+        # Allow safe prompts.
+
+        # TODO (Developer) : Update path to changing (sanitized) prompt in request body
+        # according to expected request body format
         body_json["prompt"] = valid_prompt
         return callout_tools.add_body_mutation(body=json.dumps(body_json))
 
@@ -196,19 +178,27 @@ class CalloutServerExample(callout_server.CalloutServer):
             return callout_tools.add_body_mutation()
 
         response_body_json = json.loads(body_content)
+        # TODO (Developer) : Update parsing model response from response body
+        # according to expected response format
         model_response = response_body_json["choices"][0]["message"]["content"]
 
         if not model_response:
             return callout_tools.add_body_mutation()
 
-        is_invalid_model_response, valid_model_response = screen_prompt(model_response)
+        is_invalid_model_response, valid_model_response = screen_text(
+            model_response, InputType.MODEL_RESPONSE
+        )
         if is_invalid_model_response:
-            # Stop response for invalid model response
+            # Deny if Model Armor flags the model's response as unsafe.
             return callout_tools.deny_callout(
                 context,
                 msg="Model response violates responsible AI filters. Update the prompt or contact application admin if issue persists.",
             )
 
+        # Allow safe model response
+
+        # TODO (Developer) : Update path to changing (sanitized) model response in response body
+        # according to expected response format
         response_body_json["choices"][0]["message"]["content"] = valid_model_response
         return callout_tools.add_body_mutation(body=json.dumps(response_body_json))
 
