@@ -50,6 +50,10 @@ def screen_text(text: str, type: InputType) -> Tuple[bool, str]:
     # Location for model armor client and template
     location = os.environ.get("MA_LOCATION")
 
+    if not location:
+        logging.warning("`MA_LOCATION` environment variable not found.")
+        return is_invalid, sanitized_text
+
     # Create the model armor client
     client = modelarmor_v1.ModelArmorClient(
         transport="rest",
@@ -134,14 +138,19 @@ class CalloutServerExample(callout_server.CalloutServer):
         if not body_content:
             return callout_tools.add_body_mutation()
 
-        body_json = json.loads(body_content)
+        try:
+            body_json = json.loads(body_content)
+        except json.JSONDecodeError:
+            context.abort(
+                http_status_pb2.StatusCode.InvalidArgument, "Invalid JSONBody"
+            )
 
         # TODO (Developer) : Update parsing prompt from request body
         # according to expected request body format
         prompt = body_json.get("prompt", "")
-
         if not prompt:
             return callout_tools.add_body_mutation()
+
         is_invalid_prompt, valid_prompt = screen_text(prompt, InputType.PROMPT)
         if is_invalid_prompt:
             # Stop request for invalid prompts
@@ -177,7 +186,13 @@ class CalloutServerExample(callout_server.CalloutServer):
         if not body_content:
             return callout_tools.add_body_mutation()
 
-        response_body_json = json.loads(body_content)
+        try:
+            response_body_json = json.loads(body_content)
+        except json.JSONDecodeError:
+            context.abort(
+                http_status_pb2.StatusCode.InvalidArgument, "Invalid JSON response body"
+            )
+
         # TODO (Developer) : Update parsing model response from response body
         # according to expected response format
         model_response = response_body_json["choices"][0]["message"]["content"]

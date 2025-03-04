@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import json
 from typing import Generator
 from unittest.mock import MagicMock, patch
@@ -34,6 +35,11 @@ from google.cloud import modelarmor_v1
 
 _ = setup_server
 _local_test_args = {"kwargs": default_kwargs, "test_class": CalloutServerTest}
+
+os.environ.update({"MA_LOCATION": "us-central1"})
+os.environ.update(
+    {"MA_TEMPLATE": "projects/123456789/locations/us-central1/templates/123456789"}
+)
 
 
 @pytest.fixture
