@@ -129,7 +129,7 @@ Configure firewall rules for backends (Google Cloud [documentation](https://clou
         - `MA_LOCATION`: Google cloud location Id of Model Armor templates.
         - `MA_PROMPT_TEMPLATE`: Model Armor template resource path for screening user prompt
             (eg. `projects/<project-id>/locations/<location-id>/templates/<template-id>`)
-        - `MA_RESPONSE_TEMPLATE `: Model Armor template resource path for screening model response
+        - `MA_RESPONSE_TEMPLATE`: Model Armor template resource path for screening model response
             (eg. `projects/<project-id>/locations/<location-id>/templates/<template-id>`).
 
     **Note** 
@@ -151,7 +151,7 @@ The following is an example of passing an invalid prompt to OpenAI through a Loa
 - Example Response
     ```bash
     HTTP/1.1 403 Forbidden
-    model-armour-message: Provided prompt does not comply with Responsible AI filter
+    model-armor-message: Provided prompt does not comply with Responsible AI filter
     via: 1.1 google
     content-length: 0
     ```
