@@ -132,7 +132,9 @@ Configure firewall rules for backends (Google Cloud [documentation](https://clou
 
     **Note** 
     - When creating the callout instance, ensure that the appropriate Cloud API score is enabled for the Model Armor service in the "Security and Access" settings.
-    - Compute engine service account of project (ie. <PROJECT_NUMBER>-compute@developer.gserviceaccount.com) should have appropriate Model Armor permissions.
+    - Instance should have `Model Armor User` permission. Following are option to provide permission to instance.
+        - Create new service account for callout instance with required role and assign newly created service account to instance. (Recommended)
+        - Assign default compute engine service account of project (ie. <PROJECT_NUMBER>-compute@developer.gserviceaccount.com) to instance and update permission for service account with required model armor role.
 
 2. Configure Traffic Extension
 
